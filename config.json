@@ -22,12 +22,16 @@
         "AMD",
         "NBIS",
         "ASX",
-        "MRVL",
         "GEV",
+        "MRVL",
         "MU",
         "SPCX",
         "VST",
-        "PLTR"
+        "PLTR",
+        "US",
+        "10Y",
+        "TREASURY",
+        "YIELD"
       ]
     },
     {
