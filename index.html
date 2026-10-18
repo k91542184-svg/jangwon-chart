@@ -253,6 +253,14 @@ kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-botto
 #dtb .vs{width:1px;height:18px;background:var(--line);margin:0 2px}
 #ctx{min-width:200px}
 #ctx hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+#wlMenu{position:fixed;min-width:210px;z-index:40}
+#wlMenu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+#wlMenu .wm-t{padding:6px 10px 2px;color:var(--muted);font-size:12px}
+#wlMenu .wm-t b{color:var(--ink);margin-left:4px}
+#wlMenu .wm-dots{display:flex;gap:12px;padding:6px 10px 8px}
+#wlMenu .wm-dot{width:24px;height:24px;padding:0;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:700;border:0;line-height:1}
+@media (pointer:coarse){#wlMenu button:not(.wm-dot){padding:12px 12px}#wlMenu .wm-dot{width:30px;height:30px}}
+#list li.ctxon{background:var(--hover)}
 .badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d33d43;color:#fff;font-size:11px;font-weight:600}
 .wr .spark{grid-row:1/3;grid-column:2;align-self:center}
 .wr{grid-template-columns:1fr 54px auto!important}
@@ -431,6 +439,7 @@ kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-botto
 </div>
 
 <div class="menu" id="ctx" hidden></div>
+<div class="menu" id="wlMenu" hidden></div>
 
 <div class="ov" id="apiOv" role="dialog" aria-modal="true" aria-labelledby="apiTitle">
   <div class="dlg">
@@ -610,6 +619,12 @@ const DEF_FOLDERS = [
 let folders = LS.get('jwc2.folders', null);
 if (!Array.isArray(folders) || !folders.length) folders = JSON.parse(JSON.stringify(DEF_FOLDERS));
 const saveFolders = () => LS.set('jwc2.folders', folders);
+/* 관심목록 종목 글자 색 표시 (우클릭 메뉴) */
+const SYMCOL = [['cyan','#18b8d9','청록'], ['green','#8fbd3a','연두'], ['blue','#6f86f0','파랑'], ['orange','#f28a25','주황'], ['yellow','#f6b72c','노랑']];
+let symColors = LS.get('jwc2.symcolors', {});
+if (!symColors || typeof symColors !== 'object' || Array.isArray(symColors)) symColors = {};
+const saveSymColors = () => LS.set('jwc2.symcolors', symColors);
+const symColorHex = s => { const c = SYMCOL.find(x => x[0] === symColors[s]); return c ? c[1] : ''; };
 let drawings = LS.get('jwc2.draw', {});
 const saveDrawings = () => LS.set('jwc2.draw', drawings);
 let events = LS.get('jwc2.events', {});
@@ -1928,7 +1943,7 @@ window.addEventListener('keydown', e => {
   const open = document.querySelector('.ov.open');
   if (e.key === 'Escape'){
     if (open){ open.classList.remove('open'); if (open.id === 'askOv') closeAsk(null); return; }
-    if (!$('#folderMenu').hidden || !$('#cmpMenu').hidden || !$('#ctx').hidden){ $('#folderMenu').hidden = true; $('#cmpMenu').hidden = true; $('#ctx').hidden = true; return; }
+    if (!$('#folderMenu').hidden || !$('#cmpMenu').hidden || !$('#ctx').hidden || !$('#wlMenu').hidden){ $('#folderMenu').hidden = true; $('#cmpMenu').hidden = true; $('#ctx').hidden = true; closeWlMenu(); return; }
     if (replay.picking){ replay.picking = false; inv(); return; }
     pending = null; measure = null; sel = null; setTool('cursor'); refreshToolState(); return;
   }
@@ -2147,7 +2162,7 @@ function renderList(){
   $('#list').innerHTML = syms.length ? syms.map(s => {
     const q = quoteOf(s), col = q ? (q.chg >= 0 ? 'var(--up)' : 'var(--down)') : '';
     const stale = q && dayKey(q.last.t) < newest;
-    return `<li class="${s === S.sym ? 'on' : ''}" data-li="${esc(s)}"${S.sort === 'manual' ? ' draggable="true"' : ''}><button class="wr" data-sym="${esc(s)}"><span class="ws" style="${q ? `color:${col}` : ''}">${esc(s)}${hits.has(s) ? '<span class="bell" title="알림선 도달">●</span>' : ''}</span>${spark(s)}<span class="wp" style="color:${col}">${q ? fp(q.last.c) : '–'}</span><span class="wn">${esc(NAMES[s] || '')}${q ? ` <span class="wd${stale ? ' stale' : ''}" title="${stale ? '다른 종목보다 오래된 데이터' : '마지막 데이터 날짜'}">${fmtShort(q.last.t).slice(3)}</span>` : ''}</span><span class="wc${q ? '' : ' none'}" style="color:${col}">${q ? `${sgn(q.pct)}${q.pct.toFixed(2)}%` : '데이터 없음'}</span></button><button class="wrm" data-rm="${esc(s)}" aria-label="${esc(s)} 폴더에서 빼기" title="이 폴더에서 빼기">✕</button></li>`;
+    return `<li class="${s === S.sym ? 'on' : ''}" data-li="${esc(s)}"${S.sort === 'manual' ? ' draggable="true"' : ''}><button class="wr" data-sym="${esc(s)}"><span class="ws" style="${q ? `color:${col};` : ''}${symColorHex(s) ? `color:${symColorHex(s)}!important` : ''}">${esc(s)}${hits.has(s) ? '<span class="bell" title="알림선 도달">●</span>' : ''}</span>${spark(s)}<span class="wp" style="color:${col}">${q ? fp(q.last.c) : '–'}</span><span class="wn">${esc(NAMES[s] || '')}${q ? ` <span class="wd${stale ? ' stale' : ''}" title="${stale ? '다른 종목보다 오래된 데이터' : '마지막 데이터 날짜'}">${fmtShort(q.last.t).slice(3)}</span>` : ''}</span><span class="wc${q ? '' : ' none'}" style="color:${col}">${q ? `${sgn(q.pct)}${q.pct.toFixed(2)}%` : '데이터 없음'}</span></button><button class="wrm" data-rm="${esc(s)}" aria-label="${esc(s)} 폴더에서 빼기" title="이 폴더에서 빼기">✕</button></li>`;
   }).join('') : `<li style="padding:16px 12px;color:var(--muted);display:block">이 폴더는 비어 있습니다. 아래 칸에 종목 코드를 넣어 추가하세요.</li>`;
 }
 function stepSym(d){
@@ -2606,7 +2621,8 @@ async function restoreBackup(j){
   });
   if (j.drawings && typeof j.drawings === 'object') for (const k in j.drawings) if (!drawings[k] || !drawings[k].length) drawings[k] = j.drawings[k];
   if (j.events && typeof j.events === 'object') for (const k in j.events) if (!events[k] || !events[k].length) events[k] = j.events[k];
-  saveFolders(); saveDrawings(); saveEvents();
+  if (j.symColors && typeof j.symColors === 'object') for (const k in j.symColors) if (validSym(k) && !symColors[k] && SYMCOL.some(c => c[0] === j.symColors[k])) symColors[k] = j.symColors[k];
+  saveSymColors(); saveFolders(); saveDrawings(); saveEvents();
 }
 
 /* ================= settings dialog ================= */
@@ -2708,7 +2724,7 @@ $('#saveBtn').addEventListener('click', () => {
 $('#backupBtn').addEventListener('click', () => {
   const list = Object.values(tickers).filter(t => !t.demo).map(t => ({sym:t.sym, d:encB(t.daily), i:encB(t.intra), im:t.im || null}));
   const d = new Date(), stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
-  saveFile(`chart-backup-${stamp}.json`, JSON.stringify({app:'jwc-chart', v:4, saved:Date.now(), tickers:list, folders, drawings, events, settings:S}), '백업 파일을 저장했습니다. 다른 기기에서는 ‘데이터 불러오기’에 이 파일을 넣으면 됩니다.');
+  saveFile(`chart-backup-${stamp}.json`, JSON.stringify({app:'jwc-chart', v:4, saved:Date.now(), tickers:list, folders, symColors, drawings, events, settings:S}), '백업 파일을 저장했습니다. 다른 기기에서는 ‘데이터 불러오기’에 이 파일을 넣으면 됩니다.');
 });
 
 /* ================= boot ================= */
@@ -2869,6 +2885,62 @@ listEl2.addEventListener('drop', e => {
   dragSym = null; renderList();
 });
 listEl2.addEventListener('dragend', () => { dragSym = null; listEl2.querySelectorAll('.drag,.over').forEach(x => x.classList.remove('drag', 'over')); });
+
+/* ================= watchlist right-click menu: 색 표시 · 맨 위로 · 맨 아래로 ================= */
+const wlMenu = $('#wlMenu'); let wlMenuSym = '';
+function closeWlMenu(){ wlMenu.hidden = true; listEl2.querySelectorAll('.ctxon').forEach(x => x.classList.remove('ctxon')); }
+function openWlMenu(sym, x, y){
+  ctxEl.hidden = true; closeWlMenu(); wlMenuSym = sym;
+  const li = listEl2.querySelector(`[data-li="${CSS.escape(sym)}"]`); if (li) li.classList.add('ctxon');
+  const cur = symColors[sym];
+  wlMenu.innerHTML = `<div class="wm-t">색 표시<b>${esc(sym)}</b></div>`
+    + `<div class="wm-dots">${SYMCOL.map(c => `<button class="wm-dot" data-wcol="${c[0]}" style="background:${c[1]}!important" title="${c[2]}" aria-label="${c[2]}">${cur === c[0] ? '✓' : ''}</button>`).join('')}</div><hr>`
+    + `<button data-wm="top">맨 위로</button><button data-wm="bottom">맨 아래로</button><hr><button data-wm="rm" class="del">이 폴더에서 빼기</button>`;
+  wlMenu.hidden = false;
+  wlMenu.style.left = Math.max(4, Math.min(innerWidth - wlMenu.offsetWidth - 8, x)) + 'px';
+  wlMenu.style.top = Math.max(4, Math.min(innerHeight - wlMenu.offsetHeight - 8, y)) + 'px';
+}
+listEl2.addEventListener('contextmenu', e => {
+  const li = e.target.closest('[data-li]'); if (!li) return;
+  e.preventDefault(); openWlMenu(li.dataset.li, e.clientX, e.clientY);
+});
+/* 휴대폰·태블릿: 종목을 꾹 누르면 같은 메뉴 */
+let lpTimer = 0, lpFired = false, lpXY = [0, 0];
+const lpCancel = () => { clearTimeout(lpTimer); lpTimer = 0; };
+listEl2.addEventListener('touchstart', e => {
+  const li = e.target.closest('[data-li]'); if (!li || e.touches.length !== 1) return;
+  lpFired = false; lpXY = [e.touches[0].clientX, e.touches[0].clientY]; lpCancel();
+  lpTimer = setTimeout(() => { lpTimer = 0; lpFired = true; openWlMenu(li.dataset.li, lpXY[0], lpXY[1]); }, 550);
+}, {passive:true});
+listEl2.addEventListener('touchmove', e => { const t = e.touches[0]; if (t && Math.hypot(t.clientX - lpXY[0], t.clientY - lpXY[1]) > 10) lpCancel(); }, {passive:true});
+listEl2.addEventListener('touchend', lpCancel); listEl2.addEventListener('touchcancel', lpCancel);
+listEl2.addEventListener('click', e => { if (lpFired){ lpFired = false; e.stopPropagation(); e.preventDefault(); } }, true);
+listEl2.addEventListener('scroll', closeWlMenu);
+document.addEventListener('click', e => { if (!wlMenu.hidden && !wlMenu.contains(e.target)) closeWlMenu(); });
+document.addEventListener('contextmenu', e => { if (!wlMenu.hidden && !e.target.closest('#list')) closeWlMenu(); });
+wlMenu.addEventListener('click', e => {
+  const sym = wlMenuSym, f = curFolder();
+  const dot = e.target.closest('[data-wcol]');
+  if (dot){
+    const k = dot.dataset.wcol;
+    if (symColors[sym] === k) delete symColors[sym]; else symColors[sym] = k;
+    saveSymColors(); closeWlMenu(); renderList(); return;
+  }
+  const b = e.target.closest('[data-wm]'); if (!b) return;
+  closeWlMenu();
+  if (b.dataset.wm === 'rm'){
+    f.syms = f.syms.filter(s => s !== sym); saveFolders(); renderFolders(); renderList(); renderQuote();
+    toast(`${sym}을(를) ‘${f.name}’에서 뺐습니다. 가격 데이터는 남아 있습니다.`); return;
+  }
+  if (!f.syms.includes(sym)) return;
+  f.syms = f.syms.filter(s => s !== sym);
+  if (b.dataset.wm === 'top') f.syms.unshift(sym); else f.syms.push(sym);
+  saveFolders();
+  const was = S.sort; if (was !== 'manual'){ S.sort = 'manual'; saveSettings(); }
+  renderList();
+  const li = listEl2.querySelector(`[data-li="${CSS.escape(sym)}"]`); if (li) li.scrollIntoView({block:'nearest'});
+  toast(`${sym}을(를) ${b.dataset.wm === 'top' ? '맨 위' : '맨 아래'}로 옮겼습니다.${was !== 'manual' ? ' 정렬을 ‘직접 순서’로 바꿨습니다.' : ''}`);
+});
 
 /* ================= price-line alerts ================= */
 let alertLog = LS.get('jwc2.alerts', []);
