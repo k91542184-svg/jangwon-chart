@@ -1,0 +1,41 @@
+name: Update chart data
+
+on:
+  schedule:
+    - cron: "35 21 * * 1-5"   # 미국 장 마감 후 (한국시간 화~토 오전 6:35)
+    - cron: "35 1 * * 2-6"    # 늦게 정정된 데이터 반영용 (한국시간 오전 10:35)
+  push:
+    paths:
+      - "config.json"         # 종목을 추가하면 바로 받기
+  workflow_dispatch:           # Actions 탭에서 수동 실행
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-chart-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/update_data.py
+      - name: Save data to repository
+        run: |
+          git config user.name "chart-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "새 데이터 없음"
+          else
+            git commit -m "data: $(date -u +%Y-%m-%d)"
+            git pull --rebase
+            git push
+          fi
