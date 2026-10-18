@@ -1,0 +1,17 @@
+{
+  "name": "장원 차트",
+  "short_name": "장원 차트",
+  "description": "미국주식 장 마감 후 자동 갱신 차트",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e141e",
+  "theme_color": "#10141c",
+  "lang": "ko",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
