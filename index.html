@@ -264,6 +264,10 @@ kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-botto
 #wlMenu .wm-pick{position:relative;width:24px;height:24px;border-radius:50%;background:conic-gradient(#ef4444,#f6b72c,#8fbd3a,#18b8d9,#6f86f0,#d946ef,#ef4444);display:grid;place-items:center;color:#fff;font-weight:700;font-size:16px;line-height:1;text-shadow:0 0 3px rgba(0,0,0,.7);overflow:hidden;cursor:pointer}
 #wlMenu .wm-pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
 @media (pointer:coarse){#wlMenu .wm-pick{width:30px;height:30px}}
+#wlMenu .wm-t{display:flex;align-items:center;gap:4px}
+#wlMenu .wm-edit{display:inline-block;width:auto;margin-left:auto;padding:2px 9px;font-size:12px;color:var(--accent);border:1px solid var(--line);border-radius:5px}
+#wlMenu label.wm-dot{position:relative;overflow:hidden;cursor:pointer;text-shadow:0 0 3px rgba(0,0,0,.7)}
+#wlMenu label.wm-dot input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
 .badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d33d43;color:#fff;font-size:11px;font-weight:600}
 .wr .spark{grid-row:1/3;grid-column:2;align-self:center}
 .wr{grid-template-columns:1fr 54px auto!important}
@@ -559,7 +563,7 @@ const AX_W = 74, AX_H = 26;
 const SCHEMES = { us:{up:'#12a96f', down:'#e5484d'}, kr:{up:'#e0464e', down:'#2f6fe0'} };
 const PALETTE = ['#eab308','#f472b6','#3b82f6','#22c55e','#ef4444','#a78bfa','#06b6d4','#94a3b8'];
 const WIDTHS = [1, 1.5, 2, 3];
-const TFS = [['30','30분'],['60','1시간'],['D','1일'],['W','7일'],['M','1달']];
+const TFS = [['30','30분'],['60','1시간'],['D','1일'],['W','7일'],['M','1달'],['MM','합성월봉']];
 const TFN = Object.fromEntries(TFS);
 const FIBS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 const NAMES = {
@@ -575,7 +579,7 @@ const NAMES = {
 
 /* ================= settings ================= */
 const DEF = {
-  sym:'', folder:'', tf:'D', type:'candle', scheme:'us', theme:'auto', magnet:true, sort:'manual',
+  sym:'', folder:'', tf:'D', synthM:false, type:'candle', scheme:'us', theme:'auto', magnet:true, sort:'manual',
   draw:{c:'#eab308', w:1.5, dash:false},
   vol:true, maOn:true,
   ma:[
@@ -628,7 +632,11 @@ let symColors = LS.get('jwc2.symcolors', {});
 if (!symColors || typeof symColors !== 'object' || Array.isArray(symColors)) symColors = {};
 const saveSymColors = () => LS.set('jwc2.symcolors', symColors);
 const HEXRE = /^#[0-9a-f]{6}$/i;
-const symColorHex = s => { const v = symColors[s]; if (HEXRE.test(v)) return v; const c = SYMCOL.find(x => x[0] === v); return c ? c[1] : ''; };
+let palette = LS.get('jwc2.palette', {});
+if (!palette || typeof palette !== 'object' || Array.isArray(palette)) palette = {};
+const savePalette = () => LS.set('jwc2.palette', palette);
+const slotHex = k => { const c = SYMCOL.find(x => x[0] === k); if (!c) return ''; return HEXRE.test(palette[k]) ? palette[k].toLowerCase() : c[1]; };
+const symColorHex = s => { const v = symColors[s]; if (HEXRE.test(v)) return v; return slotHex(v); };
 let myColors = LS.get('jwc2.mycolors', []);
 myColors = Array.isArray(myColors) ? myColors.filter(c => HEXRE.test(c)).map(c => c.toLowerCase()).slice(0, 5) : [];
 const saveMyColors = () => LS.set('jwc2.mycolors', myColors);
@@ -738,6 +746,23 @@ function aggregate(bars, tf){
   if (cur) out.push(cur);
   return out;
 }
+/* 합성월봉: 연속된 같은 방향(양봉·음봉) 월봉을 하나로 합칩니다. (시가=구간 첫 달 시가, 종가=마지막 달 종가, 고·저=구간 최고·최저, 거래량=합계)
+   시가=종가인 달은 양봉으로 봅니다. */
+function mergeRuns(months){
+  const out = []; let cur = null, up = null;
+  for (const b of months){
+    const isUp = b.c >= b.o;
+    if (!cur || isUp !== up){
+      if (cur) out.push(cur);
+      cur = {t:b.t, t2:b.t, mc:1, o:b.o, h:b.h, l:b.l, c:b.c, v:b.v}; up = isUp;
+    } else {
+      if (b.h > cur.h) cur.h = b.h; if (b.l < cur.l) cur.l = b.l;
+      cur.c = b.c; cur.v += b.v; cur.t2 = b.t; cur.mc++;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 function dailyOf(T){
   if (!T) return null;
   if (T._dk !== T.up){ T._d = T.daily && T.daily.length ? T.daily : (T.intra && T.intra.length ? aggDaily(T.intra) : null); T._dk = T.up; }
@@ -753,7 +778,7 @@ function seriesFor(T, tf){
   }
   const daily = dailyOf(T);
   if (!daily) return {bars:[], err:'nodata'};
-  return {bars: tf === 'D' ? daily : aggregate(daily, tf)};
+  return {bars: tf === 'D' ? daily : tf === 'MM' ? mergeRuns(aggregate(daily, 'M')) : aggregate(daily, tf)};
 }
 function heikin(bars){
   const out = []; let po = 0, pc = 0;
@@ -883,7 +908,7 @@ function periodKey(t, tf){
   const d = new Date(t);
   if (tf === 'D') return dayKey(t);
   if (tf === 'W'){ const day = (d.getDay() + 6) % 7; return dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime()); }
-  if (tf === 'M') return d.getFullYear() * 12 + d.getMonth();
+  if (tf === 'M' || tf === 'MM') return d.getFullYear() * 12 + d.getMonth();
   return t;
 }
 function volumeProfile(raw, i0, i1, rows, vaPct){
@@ -928,7 +953,7 @@ function fv(v){
 const isIntra = () => S.tf === '30' || S.tf === '60';
 function fmtFull(t){
   const d = new Date(t), base = `${d.getFullYear()}.${p2(d.getMonth() + 1)}`;
-  if (S.tf === 'M') return base;
+  if (S.tf === 'M' || S.tf === 'MM') return base;
   const s = `${base}.${p2(d.getDate())} (${WD[d.getDay()]})`;
   return isIntra() ? `${s} ${p2(d.getHours())}:${p2(d.getMinutes())}` : s;
 }
@@ -937,7 +962,7 @@ function tickText(t, pt){
   const d = new Date(t), q = new Date(pt);
   if (isIntra()) return dayKey(t) !== dayKey(pt) ? [`${d.getMonth() + 1}/${d.getDate()}`, true] : [`${p2(d.getHours())}:${p2(d.getMinutes())}`, false];
   if (d.getFullYear() !== q.getFullYear()) return [String(d.getFullYear()), true];
-  if (S.tf === 'M') return [`${d.getMonth() + 1}월`, false];
+  if (S.tf === 'M' || S.tf === 'MM') return [`${d.getMonth() + 1}월`, false];
   if (d.getMonth() !== q.getMonth()) return [`${d.getMonth() + 1}월`, true];
   return [String(d.getDate()), false];
 }
@@ -992,8 +1017,9 @@ function rebuild(){
   R.cmp = S.cmp.map((c, k) => {
     const T2 = tickers[c.sym], col = CMP_COLORS[k % CMP_COLORS.length];
     if (!T2 || c.sym === S.sym) return {sym:c.sym, c:col, arr:null};
-    const m = new Map(); seriesFor(T2, S.tf).bars.forEach(b => m.set(periodKey(b.t, S.tf), b.c));
-    const arr = bars.map(b => { const v = m.get(periodKey(b.t, S.tf)); return v == null ? null : v; });
+    const ctf = S.tf === 'MM' ? 'M' : S.tf;
+    const m = new Map(); seriesFor(T2, ctf).bars.forEach(b => m.set(periodKey(b.t, ctf), b.c));
+    const arr = bars.map(b => { const v = m.get(periodKey(S.tf === 'MM' ? (b.t2 || b.t) : b.t, ctf)); return v == null ? null : v; });
     return {sym:c.sym, c:col, arr:arr.some(v => v != null) ? arr : null};
   });
   const n = bars.length, src = full.length > 1 ? full : bars;
@@ -1626,8 +1652,9 @@ function renderLegend(i, cmpS, first){
     else if (ord.every((v, k) => !k || ord[k - 1] < v)) h += `<span class="tag" style="color:var(--down)">EMA 역배열</span>`;
   }
   const pk = periodKey(b.t, isIntra() ? 'D' : S.tf);
-  (events[S.sym] || []).forEach(ev => { if (periodKey(ev.t, isIntra() ? 'D' : S.tf) === pk) h += `<span class="tag" style="color:${EV_COL[ev.k]}">${ev.k === 'E' ? '실적' : ev.k === 'D' ? '배당' : '메모'}${ev.note ? ' ' + esc(ev.note) : ''}</span>`; });
-  h += `</div><div class="row"><span>${fmtFull(b.t)}</span><span>시 <b>${fp(b.o)}</b></span><span>고 <b>${fp(b.h)}</b></span><span>저 <b>${fp(b.l)}</b></span><span>종 <b style="color:${col}">${fp(b.c)}</b></span><span style="color:${col}">${sgn(chg)}${fp(chg, b.c)} (${sgn(pct)}${pct.toFixed(2)}%)</span>`;
+  const inSpan = ev => { if (S.tf !== 'MM') return periodKey(ev.t, isIntra() ? 'D' : S.tf) === pk; const a = new Date(b.t), z = new Date(b.t2 || b.t); return ev.t >= new Date(a.getFullYear(), a.getMonth(), 1).getTime() && ev.t < new Date(z.getFullYear(), z.getMonth() + 1, 1).getTime(); };
+  (events[S.sym] || []).forEach(ev => { if (inSpan(ev)) h += `<span class="tag" style="color:${EV_COL[ev.k]}">${ev.k === 'E' ? '실적' : ev.k === 'D' ? '배당' : '메모'}${ev.note ? ' ' + esc(ev.note) : ''}</span>`; });
+  h += `</div><div class="row"><span>${S.tf === 'MM' && b.mc > 1 ? `${fmtFull(b.t)}~${fmtFull(b.t2)} (${b.mc}개월)` : fmtFull(b.t)}</span><span>시 <b>${fp(b.o)}</b></span><span>고 <b>${fp(b.h)}</b></span><span>저 <b>${fp(b.l)}</b></span><span>종 <b style="color:${col}">${fp(b.c)}</b></span><span style="color:${col}">${sgn(chg)}${fp(chg, b.c)} (${sgn(pct)}${pct.toFixed(2)}%)</span>`;
   if (S.vol) h += `<span class="opt">거래량 <b>${fv(b.v)}</b>${R.volma && R.volma[i] ? ` (평균의 ${(b.v / R.volma[i] * 100).toFixed(0)}%)` : ''}</span>`;
   if (S.legendMin){ legendEl.innerHTML = h + `</div>`; return; }
   h += `</div><div class="row c">`;
@@ -2000,7 +2027,8 @@ $('#clearBtn').addEventListener('click', () => {
 function rangesFor(){ return isIntra() ? [['1D','1일'],['5D','5일'],['1M','1달'],['ALL','전체']] : [['1M','1달'],['3M','3달'],['6M','6달'],['1Y','1년'],['3Y','3년'],['ALL','전체']]; }
 function syncBar(){
   const T = tickers[S.sym], hasIntra = !!(T && T.intra && T.intra.length);
-  $('#tfSeg').innerHTML = TFS.map(([k, n]) => { const na = (k === '30' || k === '60') && !hasIntra; return `<button data-tf="${k}" class="${k === S.tf ? 'on' : ''}${na ? ' na' : ''}"${na ? ' title="분봉 데이터가 없는 종목입니다"' : ''}>${n}</button>`; }).join('');
+  $('#tfSeg').innerHTML = TFS.filter(([k]) => k !== 'MM').map(([k, n]) => { const na = (k === '30' || k === '60') && !hasIntra; return `<button data-tf="${k}" class="${k === S.tf || (k === 'M' && S.tf === 'MM') ? 'on' : ''}${na ? ' na' : ''}"${na ? ' title="분봉 데이터가 없는 종목입니다"' : ''}>${n}</button>`; }).join('')
+    + ((S.tf === 'M' || S.tf === 'MM') ? `<button data-synth class="${S.tf === 'MM' ? 'on' : ''}" title="같은 방향의 월봉을 하나로 합성">합성월봉</button>` : '');
   $('#rangeSeg').innerHTML = rangesFor().map(([k, n]) => `<button data-range="${k}">${n}</button>`).join('');
   $('#typeSel').value = S.type;
   $('#symBtn').textContent = S.sym ? `${S.sym}${NAMES[S.sym] ? ' · ' + NAMES[S.sym] : ''}` : '종목 찾기';
@@ -2013,7 +2041,13 @@ function syncBar(){
   syncScaleBtn();
   $('#replayBtn').classList.toggle('rec', replay.on || replay.picking);
 }
-$('#tfSeg').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if (!b) return; stopReplay(true); S.tf = b.dataset.tf; saveSettings(); rebuild(); syncBar(); resetView(); });
+$('#tfSeg').addEventListener('click', e => {
+  const sy = e.target.closest('[data-synth]');
+  if (sy){ stopReplay(true); S.synthM = S.tf !== 'MM'; S.tf = S.synthM ? 'MM' : 'M'; saveSettings(); rebuild(); syncBar(); resetView(); return; }
+  const b = e.target.closest('[data-tf]'); if (!b) return;
+  stopReplay(true); S.tf = b.dataset.tf; if (S.tf === 'M' && S.synthM) S.tf = 'MM';
+  saveSettings(); rebuild(); syncBar(); resetView();
+});
 $('#typeSel').addEventListener('change', e => { S.type = e.target.value; saveSettings(); rebuild(); syncBar(); inv(); });
 $('#rangeSeg').addEventListener('click', e => {
   const b = e.target.closest('[data-range]'); if (!b || !R.n) return;
@@ -2629,7 +2663,8 @@ async function restoreBackup(j){
   if (j.drawings && typeof j.drawings === 'object') for (const k in j.drawings) if (!drawings[k] || !drawings[k].length) drawings[k] = j.drawings[k];
   if (j.events && typeof j.events === 'object') for (const k in j.events) if (!events[k] || !events[k].length) events[k] = j.events[k];
   if (j.symColors && typeof j.symColors === 'object') for (const k in j.symColors) if (validSym(k) && !symColors[k] && (SYMCOL.some(c => c[0] === j.symColors[k]) || HEXRE.test(j.symColors[k]))) symColors[k] = j.symColors[k];
-  saveSymColors(); saveFolders(); saveDrawings(); saveEvents();
+  if (j.palette && typeof j.palette === 'object') SYMCOL.forEach(c => { if (HEXRE.test(j.palette[c[0]]) && !HEXRE.test(palette[c[0]])) palette[c[0]] = j.palette[c[0]]; });
+  savePalette(); saveSymColors(); saveFolders(); saveDrawings(); saveEvents();
 }
 
 /* ================= settings dialog ================= */
@@ -2731,7 +2766,7 @@ $('#saveBtn').addEventListener('click', () => {
 $('#backupBtn').addEventListener('click', () => {
   const list = Object.values(tickers).filter(t => !t.demo).map(t => ({sym:t.sym, d:encB(t.daily), i:encB(t.intra), im:t.im || null}));
   const d = new Date(), stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
-  saveFile(`chart-backup-${stamp}.json`, JSON.stringify({app:'jwc-chart', v:4, saved:Date.now(), tickers:list, folders, symColors, drawings, events, settings:S}), '백업 파일을 저장했습니다. 다른 기기에서는 ‘데이터 불러오기’에 이 파일을 넣으면 됩니다.');
+  saveFile(`chart-backup-${stamp}.json`, JSON.stringify({app:'jwc-chart', v:4, saved:Date.now(), tickers:list, folders, symColors, palette, drawings, events, settings:S}), '백업 파일을 저장했습니다. 다른 기기에서는 ‘데이터 불러오기’에 이 파일을 넣으면 됩니다.');
 });
 
 /* ================= boot ================= */
@@ -2896,14 +2931,24 @@ listEl2.addEventListener('dragend', () => { dragSym = null; listEl2.querySelecto
 /* ================= watchlist right-click menu: 색 표시 · 맨 위로 · 맨 아래로 ================= */
 const wlMenu = $('#wlMenu'); let wlMenuSym = '';
 function closeWlMenu(){ wlMenu.hidden = true; listEl2.querySelectorAll('.ctxon').forEach(x => x.classList.remove('ctxon')); }
-function openWlMenu(sym, x, y){
-  ctxEl.hidden = true; closeWlMenu(); wlMenuSym = sym;
-  const li = listEl2.querySelector(`[data-li="${CSS.escape(sym)}"]`); if (li) li.classList.add('ctxon');
-  const cur = symColors[sym];
-  wlMenu.innerHTML = `<div class="wm-t">색 표시<b>${esc(sym)}</b></div>`
-    + `<div class="wm-dots">${SYMCOL.map(c => `<button class="wm-dot" data-wcol="${c[0]}" style="background:${c[1]}!important" title="${c[2]}" aria-label="${c[2]}">${cur === c[0] ? '✓' : ''}</button>`).join('')}</div>`
+let wlEdit = false;
+function renderWlMenu(){
+  const sym = wlMenuSym, cur = symColors[sym];
+  if (wlEdit){
+    wlMenu.innerHTML = `<div class="wm-t">바꿀 색을 누르세요<button class="wm-edit" data-wedit>완료</button></div>`
+      + `<div class="wm-dots">${SYMCOL.map((c, i) => `<label class="wm-dot" title="색 ${i + 1} 바꾸기" style="background:${slotHex(c[0])}!important">✎<input type="color" data-wslot="${c[0]}" value="${slotHex(c[0])}"></label>`).join('')}</div>`
+      + `<div class="wm-t"><button class="wm-edit" data-wreset style="margin-left:10px">기본색으로 되돌리기</button></div>`;
+    return;
+  }
+  wlMenu.innerHTML = `<div class="wm-t">색 표시<b>${esc(sym)}</b><button class="wm-edit" data-wedit>색 바꾸기</button></div>`
+    + `<div class="wm-dots">${SYMCOL.map((c, i) => `<button class="wm-dot" data-wcol="${c[0]}" style="background:${slotHex(c[0])}!important" title="색 ${i + 1}" aria-label="색 ${i + 1}">${cur === c[0] ? '✓' : ''}</button>`).join('')}</div>`
     + `<div class="wm-t">내 색</div><div class="wm-dots">${myColors.map(c => `<button class="wm-dot" data-wmy="${c}" style="background:${c}!important" title="${c}" aria-label="내 색 ${c}">${cur && String(cur).toLowerCase() === c ? '✓' : ''}</button>`).join('')}<label class="wm-pick" title="원하는 색 고르기" aria-label="원하는 색 고르기">+<input type="color" data-wpick value="${HEXRE.test(cur) ? cur : (symColorHex(sym) || '#18b8d9')}"></label></div><hr>`
     + `<button data-wm="top">맨 위로</button><button data-wm="bottom">맨 아래로</button><hr><button data-wm="rm" class="del">이 폴더에서 빼기</button>`;
+}
+function openWlMenu(sym, x, y){
+  ctxEl.hidden = true; closeWlMenu(); wlMenuSym = sym; wlEdit = false;
+  const li = listEl2.querySelector(`[data-li="${CSS.escape(sym)}"]`); if (li) li.classList.add('ctxon');
+  renderWlMenu();
   wlMenu.hidden = false;
   wlMenu.style.left = Math.max(4, Math.min(innerWidth - wlMenu.offsetWidth - 8, x)) + 'px';
   wlMenu.style.top = Math.max(4, Math.min(innerHeight - wlMenu.offsetHeight - 8, y)) + 'px';
@@ -2924,9 +2969,11 @@ listEl2.addEventListener('touchmove', e => { const t = e.touches[0]; if (t && Ma
 listEl2.addEventListener('touchend', lpCancel); listEl2.addEventListener('touchcancel', lpCancel);
 listEl2.addEventListener('click', e => { if (lpFired){ lpFired = false; e.stopPropagation(); e.preventDefault(); } }, true);
 listEl2.addEventListener('scroll', closeWlMenu);
-document.addEventListener('click', e => { if (!wlMenu.hidden && !wlMenu.contains(e.target)) closeWlMenu(); });
+document.addEventListener('click', e => { if (!wlMenu.hidden && !e.composedPath().includes(wlMenu)) closeWlMenu(); });
 document.addEventListener('contextmenu', e => { if (!wlMenu.hidden && !e.target.closest('#list')) closeWlMenu(); });
 wlMenu.addEventListener('change', e => {
+  const sl = e.target.closest('[data-wslot]');
+  if (sl){ if (HEXRE.test(sl.value)){ palette[sl.dataset.wslot] = sl.value.toLowerCase(); savePalette(); renderWlMenu(); renderList(); } return; }
   const inp = e.target.closest('[data-wpick]'); if (!inp || !HEXRE.test(inp.value)) return;
   const c = inp.value.toLowerCase();
   symColors[wlMenuSym] = c; saveSymColors();
@@ -2935,6 +2982,8 @@ wlMenu.addEventListener('change', e => {
 });
 wlMenu.addEventListener('click', e => {
   const sym = wlMenuSym, f = curFolder();
+  if (e.target.closest('[data-wedit]')){ wlEdit = !wlEdit; renderWlMenu(); return; }
+  if (e.target.closest('[data-wreset]')){ palette = {}; savePalette(); renderWlMenu(); renderList(); return; }
   const dot = e.target.closest('[data-wcol],[data-wmy]');
   if (dot){
     const k = dot.dataset.wcol || dot.dataset.wmy;
