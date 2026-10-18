@@ -21,6 +21,9 @@ DAILY_PERIOD = cfg.get("daily_period", "10y")
 WANT_M30 = bool(cfg.get("intraday_30m", True))
 MAX_M30 = int(cfg.get("max_30m_bars", 5000))
 
+# 앱에서는 ^ 없이 입력한 지수·금리 코드를 Yahoo 코드로 바꿔서 받습니다. (파일 이름은 입력한 코드 그대로)
+YAHOO = {"SPX": "^GSPC", "IXIC": "^IXIC", "DJI": "^DJI", "TNX": "^TNX", "VIX": "^VIX"}
+
 meta_path = DATA / "meta.json"
 old_meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
 meta = {"updated": None, "market_date": None, "symbols": {}, "errors": {}}
@@ -52,7 +55,7 @@ def history(sym, **kw):
     last = None
     for attempt in range(3):
         try:
-            df = yf.Ticker(sym).history(auto_adjust=False, actions=False, **kw)
+            df = yf.Ticker(YAHOO.get(sym, sym)).history(auto_adjust=False, actions=False, **kw)
             return None if df is None or df.empty else df
         except Exception as e:  # 일시적인 차단·네트워크 오류는 잠시 쉬었다 다시
             last = e
