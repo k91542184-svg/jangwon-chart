@@ -1,0 +1,65 @@
+{
+  "_설명": "folders의 종목이 매일 자동으로 갱신됩니다. 종목을 추가·삭제한 뒤 저장(Commit)하면 몇 분 안에 데이터가 받아집니다.",
+  "daily_period": "10y",
+  "intraday_30m": true,
+  "max_30m_bars": 5000,
+  "folders": [
+    {
+      "name": "보유 종목",
+      "symbols": [
+        "SMH",
+        "DRAM",
+        "NVDA",
+        "SKHY",
+        "LITE",
+        "BE",
+        "GLW",
+        "MU",
+        "WDC",
+        "TSM",
+        "TER",
+        "AMAT",
+        "GEV",
+        "JPM",
+        "NBIS",
+        "LLY",
+        "MRVL",
+        "VRT",
+        "PWR",
+        "RKLB",
+        "NVT"
+      ]
+    },
+    {
+      "name": "26년 10월 미주은 모델링",
+      "symbols": [
+        "PLTR",
+        "NVDA",
+        "LITE",
+        "DELL",
+        "GOOGL",
+        "META",
+        "MU",
+        "AMZN",
+        "SPCX",
+        "SNDK",
+        "TSM",
+        "AMD",
+        "BE",
+        "BMNR",
+        "MRVL",
+        "GEV",
+        "CRDO",
+        "WDC"
+      ]
+    },
+    {
+      "name": "지수·ETF",
+      "symbols": [
+        "SPY",
+        "QQQ",
+        "SOXX"
+      ]
+    }
+  ]
+}
