@@ -115,6 +115,15 @@ for sym in symbols:
         meta["symbols"][sym] = entry
     time.sleep(0.7)
 
+# 목록에서 빠진 종목의 옛 데이터 파일 정리 (모든 종목이 실패한 날에는 아무것도 지우지 않음)
+if symbols and ok > 0:
+    keep = set(symbols)
+    for sub in ("daily", "m30"):
+        for p in sorted((DATA / sub).glob("*.json")):
+            if p.stem not in keep:
+                p.unlink()
+                print(f"{p.stem}: 목록에서 빠져 {sub} 파일을 지웠습니다")
+
 dates = [v["d"] for v in meta["symbols"].values() if v.get("d")]
 meta["market_date"] = max(dates) if dates else old_meta.get("market_date")
 meta["updated"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
