@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
   <link rel="manifest" href="manifest.webmanifest"><script src="pwa.js" defer></script>
+  <script src="gh-sync.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>장원 차트</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -3199,6 +3200,7 @@ async function afterBoot(){
   if (!Object.values(tickers).some(t => !t.demo)) setTimeout(() => toast('처음이라면 위쪽 ‘데이터 받기’로 관심 폴더 종목의 가격을 받아 오세요. 지금 보이는 차트는 연습용 가상 데이터입니다.'), 900);
 }
 
+window.JWC = {get folders(){ return folders; }, get sym(){ return S.sym; }, saveFolders, renderFolders, renderList, renderQuote, curFolder, srvSync, toast, validSym, openApi, srv};
 boot().then(afterBoot);
 })();
 </script>
