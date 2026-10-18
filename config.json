@@ -7,27 +7,22 @@
     {
       "name": "보유 종목",
       "symbols": [
+        "NVDA",
+        "GOOGL",
+        "LLY",
+        "META",
+        "TSM",
+        "BE",
+        "LITE",
         "SMH",
         "DRAM",
-        "NVDA",
-        "SKHY",
-        "LITE",
-        "BE",
         "GLW",
         "MU",
-        "WDC",
-        "TSM",
-        "TER",
-        "AMAT",
         "GEV",
-        "JPM",
         "NBIS",
-        "LLY",
         "MRVL",
-        "VRT",
-        "PWR",
-        "RKLB",
-        "NVT"
+        "DELL",
+        "ASX"
       ]
     },
     {
