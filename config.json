@@ -13,6 +13,7 @@
         "META",
         "TSM",
         "BE",
+        "DELL",
         "LITE",
         "SMH",
         "DRAM",
@@ -21,8 +22,8 @@
         "GEV",
         "NBIS",
         "MRVL",
-        "DELL",
-        "ASX"
+        "ASX",
+        "ALAB"
       ]
     },
     {
