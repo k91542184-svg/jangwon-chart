@@ -415,6 +415,7 @@ kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-botto
         <button class="icon" id="wlClose" aria-label="관심목록 닫기">×</button>
       </div>
       <div class="cols"><span>종목</span><button id="sortBtn">직접 순서</button></div>
+      <div id="ghWarn" hidden></div>
       <ul id="list"></ul>
       <div class="addrow"><input id="addSym" placeholder="종목 추가 (예: AAPL)" maxlength="12" autocomplete="off" spellcheck="false"><button class="btn" id="addBtn">추가</button></div>
     </aside>
@@ -681,6 +682,7 @@ const DEF_FOLDERS = [
   {id:'f-demo', name:'연습용 (가상 데이터)', syms:['DEMO-UP','DEMO-BOX','DEMO-REB']}
 ];
 let folders = LS.get('jwc2.folders', null);
+const foldersDefault = !Array.isArray(folders) || !folders.length; /* 이 브라우저에 저장된 폴더가 없어 기본 목록으로 시작했는지 */
 if (!Array.isArray(folders) || !folders.length) folders = JSON.parse(JSON.stringify(DEF_FOLDERS));
 const saveFolders = () => LS.set('jwc2.folders', folders);
 /* 관심목록 종목 글자 색 표시 (우클릭 메뉴) */
@@ -3682,26 +3684,14 @@ async function srvSync(manual){
         const [s, k, ver] = jobs.shift();
         try {
           const j = await getJSON(`data/${k === 'd' ? 'daily' : 'm30'}/${encodeURIComponent(s)}.json`);
-          const bars = decRows(j.rows);
-          if (bars.length){
-            const T = tickers[s] && !tickers[s].demo ? tickers[s] : (tickers[s] = {sym:s});
-            if (k === 'd'){ T.daily = bars; T.srvD = ver; } else { T.intra = bars; T.im = +j.interval || 30; T.srvM = ver; }
-            T.up = Date.now(); T.demo = false; await persist(T); changed.add(s);
-          }
+          if (await srvIngest(s, k, j, ver)) changed.add(s);
         } catch(_){ failed++; }
         done++; setSrvStatus(`받는 중 ${done}/${total}`);
       }
     };
     await Promise.all(Array.from({length:Math.min(6, total)}, worker));
-    if (changed.size){
-      if (changed.has(S.sym) || !tickers[S.sym] || tickers[S.sym].demo){
-        if (!tickers[S.sym] || tickers[S.sym].demo){ const f = curFolder(); S.sym = f.syms.find(x => tickers[x] && !tickers[x].demo) || [...changed][0]; saveSettings(); }
-        const bw = view.bw; rebuild(); view.bw = bw; view.end = R.n - 1 + 5; view.fix = null;
-      }
-      syncBar(); renderList(); renderQuote(); inv();
-      const fired = checkAlerts([...changed]);
-      toast(`${changed.size}개 종목을 최신 데이터로 갱신했습니다${fired ? `. 알림선에 닿은 종목 ${fired}건` : ''}${failed ? `, ${failed}건 실패` : ''}.`);
-    } else if (manual) toast(failed ? `데이터 ${failed}건을 받지 못했습니다. 잠시 뒤 다시 시도하세요.` : '이미 최신 데이터입니다.');
+    if (changed.size) srvAfter(changed, failed);
+    else if (manual) toast(failed ? `데이터 ${failed}건을 받지 못했습니다. 잠시 뒤 다시 시도하세요.` : '이미 최신 데이터입니다.');
     setSrvStatus();
   } catch(e){
     $('#srvStat').textContent = '서버 연결 실패'; $('#srvBtn').classList.add('rec');
@@ -3709,6 +3699,23 @@ async function srvSync(manual){
   }
   srv.checking = false;
   if ($('#apiOv').classList.contains('open') && !$('#srvPanel').hidden) renderSrvPanel();
+}
+/* 서버 파일 한 개(일봉 d / 30분봉 m)를 차트 데이터로 넣기 */
+async function srvIngest(s, k, j, ver){
+  const bars = decRows(j && j.rows);
+  if (!bars.length) return false;
+  const T = tickers[s] && !tickers[s].demo ? tickers[s] : (tickers[s] = {sym:s});
+  if (k === 'd'){ T.daily = bars; T.srvD = ver; } else { T.intra = bars; T.im = +j.interval || 30; T.srvM = ver; }
+  T.up = Date.now(); T.demo = false; await persist(T); return true;
+}
+function srvAfter(changed, failed, msg){
+  if (changed.has(S.sym) || !tickers[S.sym] || tickers[S.sym].demo){
+    if (!tickers[S.sym] || tickers[S.sym].demo){ const f = curFolder(); S.sym = f.syms.find(x => tickers[x] && !tickers[x].demo) || [...changed][0]; saveSettings(); }
+    const bw = view.bw; rebuild(); view.bw = bw; view.end = R.n - 1 + 5; view.fix = null;
+  }
+  syncBar(); renderList(); renderQuote(); inv();
+  const fired = checkAlerts([...changed]);
+  toast(msg || `${changed.size}개 종목을 최신 데이터로 갱신했습니다${fired ? `. 알림선에 닿은 종목 ${fired}건` : ''}${failed ? `, ${failed}건 실패` : ''}.`);
 }
 function cfgFolders(){
   return folders.map(f => ({name:f.name, symbols:f.syms.filter(s => !s.startsWith('DEMO'))})).filter(f => f.symbols.length);
@@ -3754,6 +3761,31 @@ function mergeConfig(cfg){
   });
   LS.set('jwc2.cfgSig', sig); saveFolders(); return true;
 }
+/* 이 브라우저에 폴더가 저장돼 있지 않으면(처음 열었거나 사이트 데이터가 지워진 경우) 서버의 config.json을 그대로 씀.
+   예전 기본 목록에서 되살아난 종목(서버 목록에서 이미 뺀 종목)은 한 번 정리함. */
+function adoptConfig(cfg){
+  if (!cfg || !Array.isArray(cfg.folders)) return false;
+  const clean = cfg.folders.filter(cf => cf && cf.name && Array.isArray(cf.symbols))
+    .map(cf => ({name:String(cf.name).slice(0, 40), syms:[...new Set(cf.symbols.map(x => String(x).trim().toUpperCase()).filter(validSym))]}));
+  if (!clean.length) return false;
+  if (foldersDefault){
+    const demo = folders.filter(f => f.syms.length && f.syms.every(x => x.startsWith('DEMO')));
+    folders = [...clean.map(f => ({id:'f-' + uid(), ...f})), ...demo];
+    LS.set('jwc2.cfgSig', JSON.stringify(cfg.folders)); LS.set('jwc2.fixDef1', true); saveFolders(); return true;
+  }
+  let changed = false;
+  if (!LS.get('jwc2.fixDef1', false)){
+    DEF_FOLDERS.forEach(df => {
+      const f = folders.find(x => x.name === df.name), cf = clean.find(x => x.name === df.name);
+      if (!f || !cf) return;
+      const drop = f.syms.filter(x => df.syms.includes(x) && !cf.syms.includes(x));
+      if (drop.length){ f.syms = f.syms.filter(x => !drop.includes(x)); changed = true; }
+    });
+    LS.set('jwc2.fixDef1', true);
+    if (changed) saveFolders();
+  }
+  return mergeConfig(cfg) || changed;
+}
 async function startServerMode(){
   if (framed || !/^https?:$/.test(location.protocol)) return false;
   let meta;
@@ -3761,7 +3793,7 @@ async function startServerMode(){
   if (!meta || typeof meta !== 'object' || !('symbols' in meta)) return false;
   srv.on = true; srv.meta = meta;
   $('#apiBtn').textContent = '자동 갱신';
-  try { if (mergeConfig(await getJSON('config.json'))){ const f = folders.find(x => x.name === (folders.find(y => y.id === S.folder) || {}).name) || folders[0]; S.folder = f.id; renderFolders(); renderList(); } } catch(_){}
+  try { if (adoptConfig(await getJSON('config.json'))){ const f = folders.find(x => x.name === (folders.find(y => y.id === S.folder) || {}).name) || folders[0]; S.folder = f.id; renderFolders(); renderList(); } } catch(_){}
   setSrvStatus();
   await srvSync(false);
   srv.timer = setInterval(() => srvSync(false), CHECK_EVERY);
@@ -3787,7 +3819,7 @@ async function afterBoot(){
   if (!Object.values(tickers).some(t => !t.demo)) setTimeout(() => toast('처음이라면 위쪽 ‘데이터 받기’로 관심 폴더 종목의 가격을 받아 오세요. 지금 보이는 차트는 연습용 가상 데이터입니다.'), 900);
 }
 
-window.JWC = {get folders(){ return folders; }, get sym(){ return S.sym; }, saveFolders, renderFolders, renderList, renderQuote, curFolder, srvSync, toast, validSym, openApi, srv};
+window.JWC = {get folders(){ return folders; }, get sym(){ return S.sym; }, saveFolders, renderFolders, renderList, renderQuote, curFolder, srvSync, srvIngest, srvAfter, toast, validSym, openApi, srv};
 boot().then(afterBoot);
 })();
 </script>

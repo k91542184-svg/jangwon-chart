@@ -22,6 +22,13 @@
     if (!r.ok) throw {status:r.status, msg:(j && j.message) || ('HTTP ' + r.status)};
     return j;
   }
+  /* 저장소 파일을 GitHub API로 바로 읽기: 웹사이트(Pages) 반영을 기다리지 않아 새 종목이 1~2분 안에 보임 */
+  async function rawFile(path){
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=main`, {cache:'no-store', headers:{
+      'Accept':'application/vnd.github.raw', 'Authorization':`Bearer ${token()}`, 'X-GitHub-Api-Version':'2022-11-28'}});
+    if (!r.ok) throw {status:r.status, msg:'HTTP ' + r.status};
+    return r.json();
+  }
   const errText = e => e.status === 401 ? '토큰이 맞지 않거나 만료되었습니다' : e.status === 403 || e.status === 404 ? '토큰에 이 저장소(jangwon-chart)의 Contents 쓰기 권한이 없습니다' : e.msg;
 
   /* ---------- 앱 폴더 ↔ config.json ---------- */
@@ -49,7 +56,7 @@
           await api('/contents/config.json', {method:'PUT', body:JSON.stringify({message:`관심 종목 갱신: ${note}`, content:b64enc(JSON.stringify(cfg, null, 2) + '\n'), sha:f.sha})});
         } catch(e){ if ((e.status === 409 || e.status === 422) && attempt === 0) continue; throw e; }
         lastSig = norm(mine); LSs('jwc2.cfgSig', JSON.stringify(mine));
-        if (!quiet || add.length) toast(add.length ? `${add.join(', ')} 서버에 등록했습니다. 2~5분 뒤 차트 데이터가 자동으로 들어옵니다.` : `서버 목록을 갱신했습니다 (${note}).`);
+        if (!quiet || add.length) toast(add.length ? `${add.join(', ')} 서버에 등록했습니다. 보통 1~2분 안에 차트가 자동으로 나타납니다.` : `서버 목록을 갱신했습니다 (${note}).`);
         if (add.length) fastPoll();
         break;
       }
@@ -57,12 +64,35 @@
     busy = false; setState(); decorate();
     if (again){ again = false; push(true); }
   }
+  /* 새로 등록한 종목: 15초마다 저장소를 직접 확인해 데이터가 생기는 즉시 차트에 넣음 (최대 12분) */
+  let fastBusy = false;
+  async function fastFetch(){
+    if (fastBusy || !token()) return;
+    fastBusy = true;
+    try {
+      const meta = await rawFile('data/meta.json');
+      if (meta && meta.symbols){
+        const before = missing(), cur = J().srv.meta || {};
+        if (!cur.updated || !meta.updated || meta.updated >= cur.updated) J().srv.meta = meta;
+        const ready = before.filter(s => meta.symbols[s]), changed = new Set();
+        for (const s of ready){
+          for (const k of ['d', 'm']){
+            const ver = meta.symbols[s][k]; if (!ver) continue;
+            try { if (await J().srvIngest(s, k, await rawFile(`data/${k === 'd' ? 'daily' : 'm30'}/${encodeURIComponent(s)}.json`), ver)) changed.add(s); } catch(_){}
+          }
+        }
+        if (changed.size) J().srvAfter(changed, 0, `${[...changed].join(', ')} 데이터가 들어왔습니다.`);
+      }
+    } catch(_){}
+    fastBusy = false;
+  }
   function fastPoll(){
     clearInterval(poll); let n = 0;
-    poll = setInterval(async () => {
-      n++; await J().srvSync(false); decorate();
-      if (!missing().filter(s => !serverErr(s)).length || n > 16){ clearInterval(poll); poll = 0; decorate(); }
-    }, 40000);
+    const tick = async () => {
+      n++; await fastFetch(); decorate();
+      if (!missing().filter(s => !serverErr(s)).length || n > 48){ clearInterval(poll); poll = 0; decorate(); if (n > 48) J().srvSync(false); }
+    };
+    poll = setInterval(tick, 15000);
   }
   setInterval(() => {
     if (!owner || !token() || !J().srv.on) return;
@@ -142,7 +172,7 @@
 
   /* ---------- 목록·빈 화면·검색에 상태와 추가 버튼 ---------- */
   const css = document.createElement('style');
-  css.textContent = `.slist li{display:flex;align-items:center;gap:4px}.slist li>button[data-ss]{flex:1}.sadd{flex:none;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:12px;padding:0 8px}.wc.reg{color:var(--accent)!important}.wc.bad{color:#d33d43!important}`;
+  css.textContent = `.slist li{display:flex;align-items:center;gap:4px}.slist li>button[data-ss]{flex:1}.sadd{flex:none;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:12px;padding:0 8px}.wc.reg{color:var(--accent)!important}.wc.bad{color:#d33d43!important}#ghWarn{margin:6px 8px;padding:9px 10px;border:1px solid #f0b429;background:var(--warn-bg);color:var(--ink);border-radius:8px;font-size:12px;line-height:1.5;display:flex;flex-direction:column;gap:4px}#ghWarn[hidden]{display:none}#ghWarn b{color:var(--warn)}#ghWarn .btn{align-self:flex-start;height:28px;margin-top:2px}#list .wc.none{cursor:pointer}`;
   document.head.appendChild(css);
   let decorating = false;
   function decorate(){
@@ -150,15 +180,23 @@
     const pending = new Set(missing());
     document.querySelectorAll('#list li[data-li]').forEach(li => {
       const s = li.dataset.li, wc = li.querySelector('.wc.none'); if (!wc || !pending.has(s)) return;
-      const e = serverErr(s), text = e ? '코드 확인 필요' : token() ? '등록 중…' : '서버 미등록';
-      if (wc.textContent !== text){ wc.textContent = text; wc.classList.toggle('bad', !!e); wc.classList.toggle('reg', !e && !!token()); wc.title = e || (token() ? '서버가 데이터를 받는 중입니다 (2~5분)' : '‘GitHub 연결’을 하면 자동으로 등록됩니다'); }
+      const e = serverErr(s), text = e ? '코드 확인 필요' : token() ? '받는 중…' : '서버 미등록';
+      if (wc.textContent !== text){ wc.textContent = text; wc.classList.toggle('bad', !!e); wc.classList.toggle('reg', !e && !!token()); wc.title = e || (token() ? '서버가 데이터를 받는 중입니다 (보통 1~2분)' : '눌러서 GitHub 연결: 연결하면 자동으로 등록됩니다'); }
     });
+    const warn = $('#ghWarn');
+    if (warn){
+      const miss = [...pending].filter(s => !serverErr(s));
+      const show = !token() && miss.length > 0;
+      const html = show ? `<b>새 종목 ${miss.length}개가 서버에 등록되지 않았습니다</b><span>${miss.map(esc).join(', ')}. 이 브라우저에 GitHub 연결이 없어 자동 등록이 멈춰 있습니다.</span><button class="btn primary" data-gh="conn">GitHub 연결하기</button>` : '';
+      if (warn.dataset.h !== html){ warn.innerHTML = html; warn.dataset.h = html; }
+      warn.hidden = !show;
+    }
     const em = $('#empty');
     if (em && !em.hidden && !em.querySelector('[data-gh]')){
       const s = (J().sym || '').toUpperCase(), inFolder = J().folders.some(f => f.syms.includes(s));
       if (s && !serverSyms().has(s) && !s.startsWith('DEMO')){
         const acts = em.querySelector('.acts'), p = em.querySelector('p');
-        if (p) p.textContent = serverErr(s) ? `서버가 ${s} 데이터를 받지 못했습니다: ${serverErr(s)}` : inFolder ? (token() ? '서버에 등록했습니다. 2~5분 뒤 자동으로 나타납니다.' : '‘GitHub 연결’을 해 두면 관심 폴더에 넣은 종목이 자동으로 등록됩니다.') : '관심 폴더에 넣으면 서버에 등록되고 2~5분 뒤 차트가 나타납니다.';
+        if (p) p.textContent = serverErr(s) ? `서버가 ${s} 데이터를 받지 못했습니다: ${serverErr(s)}` : inFolder ? (token() ? '서버에 등록했습니다. 보통 1~2분 안에 자동으로 나타납니다.' : '‘GitHub 연결’을 해 두면 관심 폴더에 넣은 종목이 자동으로 등록됩니다.') : '관심 폴더에 넣으면 서버에 등록되고 1~2분 뒤 차트가 나타납니다.';
         if (acts){
           acts.innerHTML = (inFolder ? '' : `<button class="btn primary" data-gh="add">‘${esc(J().curFolder().name)}’에 추가</button>`) + (token() ? '' : `<button class="btn" data-gh="conn">GitHub 연결</button>`) || `<span data-gh="x"></span>`;
         }
@@ -166,6 +204,12 @@
     }
     decorating = false;
   }
+  $('#ghWarn') && $('#ghWarn').addEventListener('click', e => { if (e.target.closest('[data-gh="conn"]')) openConnect(); });
+  $('#list') && $('#list').addEventListener('click', e => {
+    const wc = e.target.closest('.wc.none'); if (!wc || token() || !J().srv.on) return;
+    const li = wc.closest('li[data-li]'); if (!li || !missing().includes(li.dataset.li)) return;
+    e.preventDefault(); e.stopPropagation(); openConnect();
+  }, true);
   $('#empty') && $('#empty').addEventListener('click', e => {
     const b = e.target.closest('[data-gh]'); if (!b) return;
     if (b.dataset.gh === 'add'){ addMany(J().sym); $('#empty').innerHTML = ''; $('#empty').dataset.h = ''; }
@@ -198,7 +242,7 @@
   const start = setInterval(() => {
     if (!J().srv.on) return;
     clearInterval(start); setState(); decorate();
-    if (token() && owner){ lastSig = norm(appFolders()); push(true); }
+    if (token() && owner){ lastSig = norm(appFolders()); push(true).then(() => { if (missing().filter(s => !serverErr(s)).length && !poll) fastPoll(); }); }
     else lastSig = norm(appFolders());
   }, 500);
   setTimeout(() => clearInterval(start), 30000);
