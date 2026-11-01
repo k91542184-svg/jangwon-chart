@@ -25,8 +25,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
       - run: python scripts/update_data.py
+        env:
+          # config.json을 고쳐서 실행된 경우: 새 종목만 바로 받음 (1~2분). 예약·수동 실행은 전체 갱신.
+          ONLY_NEW: ${{ github.event_name == 'push' && '1' || '' }}
       - name: Save data to repository
         run: |
           git config user.name "chart-data-bot"
