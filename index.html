@@ -207,7 +207,11 @@ kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-botto
 .slist li button:hover,.slist li button.hl{background:var(--hover)}
 .slist .s1{font-weight:600}
 .slist .s2{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.slist .s3{color:var(--muted);font-size:12px}
+.slist .s3{color:var(--muted);font-size:12px;white-space:nowrap}
+.slist li button{min-width:0}
+.slist li>button[data-ss]{flex:1;width:auto}
+.slist li>button.sadd{width:auto;flex:none;display:block;padding:0 8px}
+#stage:has(#replayBar:not([hidden])) #dtb{bottom:88px}
 .scanc{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 12px;margin:8px 0}
 .scanc label{display:flex;align-items:center;gap:8px;padding:4px 0}
 .stbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12.5px;margin-top:8px}
@@ -2584,7 +2588,7 @@ function renderScan(f, conds, noData){
   const th = (k, t) => `<th data-ssort="${k}">${t}${scanSort === k ? ' ▾' : ''}</th>`;
   $('#scanOut').innerHTML = `<p>${esc(f.name)}: ${scanRes.length}개 검사${noData ? `, 데이터가 부족한 ${noData}개 제외` : ''}. ${conds.length ? `조건 ${conds.length}개를 모두 만족: ${scanRes.filter(x => x.all).length}개` : '조건을 하나 이상 고르세요.'}</p>
     ${rows.length ? `<div style="overflow-x:auto"><table class="stbl"><thead><tr>${th('sym', '종목')}${th('pct', '등락')}<th>종가</th>${th('rsi', 'RSI14')}${th('off52', '52주 고점 대비')}${th('vr', '거래량 비율')}${th('match', '맞은 조건')}</tr></thead><tbody>
-    ${rows.map(x => `<tr data-scsym="${esc(x.sym)}" class="${x.all ? 'hit' : ''}"><td>${esc(x.sym)}</td><td style="color:${x.pct >= 0 ? 'var(--up)' : 'var(--down)'}">${sgn(x.pct)}${x.pct.toFixed(2)}%</td><td>${fp(x.c)}</td><td>${x.rsi == null ? '–' : x.rsi.toFixed(1)}</td><td>${x.off52.toFixed(1)}%</td><td>${x.vr.toFixed(2)}배</td><td><div class="tags">${x.hits.map(h => `<span class="tg">${esc(short[h])}</span>`).join('') || '–'}</div></td></tr>`).join('')}
+    ${rows.map(x => `<tr data-scsym="${esc(x.sym)}" class="${x.all ? 'hit' : ''}"><td>${esc(x.sym)}</td><td style="color:${x.pct >= 0 ? 'var(--up)' : 'var(--down)'}">${sgn(x.pct)}${x.pct.toFixed(2)}%</td><td>${fp(x.c)}</td><td>${x.rsi == null ? '–' : x.rsi.toFixed(1)}</td><td>${x.off52.toFixed(1)}%</td><td>${x.vr > 0 && isFinite(x.vr) ? x.vr.toFixed(2) + '배' : '–'}</td><td><div class="tags">${x.hits.map(h => `<span class="tg">${esc(short[h])}</span>`).join('') || '–'}</div></td></tr>`).join('')}
     </tbody></table></div>` : `<p style="color:var(--muted)">${scanRes.length ? '조건에 맞는 종목이 없습니다. 조건을 줄이거나 ‘조건을 모두 만족한 종목만’을 끄고 다시 보세요.' : '이 폴더에는 검사할 일봉 데이터(60봉 이상)가 있는 종목이 없습니다.'}</p>`}`;
   $('#scanSave').hidden = !rows.length || !conds.length;
 }
