@@ -5,7 +5,7 @@ config.json 의 폴더에 들어 있는 종목을 yfinance로 받아 data/ 폴�
 - data/m30/<종목>.json   : 30분봉 (yfinance는 최근 60일만 주므로 기존 파일에 이어 붙여 기간을 늘려 감)
 - data/meta.json         : 마지막 갱신 시각, 종목별 마지막 날짜, 실패한 종목
 """
-import json, math, sys, time, datetime as dt
+import json, math, os, sys, time, datetime as dt
 from pathlib import Path
 
 import yfinance as yf
@@ -27,6 +27,21 @@ YAHOO = {"SPX": "^GSPC", "IXIC": "^IXIC", "DJI": "^DJI", "TNX": "^TNX", "VIX": "
 meta_path = DATA / "meta.json"
 old_meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
 meta = {"updated": None, "market_date": None, "symbols": {}, "errors": {}}
+
+# ONLY_NEW=1 (config.json이 바뀌어 실행될 때): 아직 데이터가 없는 새 종목만 바로 받아 1~2분 안에 차트에 나타나게 함.
+# 나머지 종목은 기존 데이터를 그대로 두고, 정해진 시각(장 마감 뒤)에 모두 다시 받습니다.
+ONLY_NEW = os.environ.get("ONLY_NEW", "") == "1"
+old_syms = old_meta.get("symbols", {})
+if ONLY_NEW:
+    targets = [s for s in symbols if not old_syms.get(s, {}).get("d") or not (DATA / "daily" / f"{s}.json").exists()]
+    for s in symbols:
+        if s not in targets and s in old_syms:
+            meta["symbols"][s] = old_syms[s]
+            if s in old_meta.get("errors", {}):
+                meta["errors"][s] = old_meta["errors"][s]
+    print(f"새 종목만 받기: {', '.join(targets) if targets else '없음'}")
+else:
+    targets = symbols
 
 
 def num(x):
@@ -78,7 +93,7 @@ def write(path, obj):
 
 
 ok = 0
-for sym in symbols:
+for sym in targets:
     entry = dict(old_meta.get("symbols", {}).get(sym, {}))
     try:
         d = history(sym, period=DAILY_PERIOD, interval="1d")
@@ -116,7 +131,7 @@ for sym in symbols:
     time.sleep(0.7)
 
 # 목록에서 빠진 종목의 옛 데이터 파일 정리 (모든 종목이 실패한 날에는 아무것도 지우지 않음)
-if symbols and ok > 0:
+if symbols and (ok > 0 or not targets):
     keep = set(symbols)
     for sub in ("daily", "m30"):
         for p in sorted((DATA / sub).glob("*.json")):
@@ -128,6 +143,6 @@ dates = [v["d"] for v in meta["symbols"].values() if v.get("d")]
 meta["market_date"] = max(dates) if dates else old_meta.get("market_date")
 meta["updated"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 write(meta_path, meta)
-print(f"완료: {ok}/{len(symbols)}개 종목 일봉 갱신, 실패 {len(meta['errors'])}개")
-if symbols and ok == 0:
+print(f"완료: {ok}/{len(targets)}개 종목 일봉 갱신, 실패 {len(meta['errors'])}개")
+if targets and ok == 0:
     sys.exit("모든 종목이 실패했습니다. Yahoo 연결이 막혔을 수 있습니다. 잠시 뒤 다시 실행하세요.")
